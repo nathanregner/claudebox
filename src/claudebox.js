@@ -258,6 +258,16 @@ class BubblewrapSandbox extends Sandbox {
 			"/tmp",
 		];
 
+		// Mount .nix-profile if it exists
+		const nixProfile = path.join(home, ".nix-profile");
+		if (pathExists(nixProfile)) {
+			args.push(
+				'--symlink',
+				realpath(nixProfile),
+				nixProfile,
+			);
+		}
+
 		// Mount parent directory tree as read-only if needed
 		if (shareTree !== repoRoot) {
 			args.push("--ro-bind", shareTree, shareTree);
@@ -328,6 +338,9 @@ class SeatbeltSandbox extends Sandbox {
 		const tmpdir = getTmpDir();
 		const canonicalTmpdir = realpath(tmpdir);
 		const canonicalSlashTmp = realpath("/tmp");
+		const home = process.env.HOME;
+		const nixProfile = path.join(home, ".nix-profile");
+		const canonicalNixProfile = pathExists(nixProfile) ? realpath(nixProfile) : null;
 
 		// Build dynamic policy
 		const writablePaths = [
@@ -338,6 +351,10 @@ class SeatbeltSandbox extends Sandbox {
 		if (canonicalTmpdir !== canonicalSlashTmp) {
 			writablePaths.push('(subpath (param "SLASH_TMP"))');
 		}
+
+		const nixProfileRules = canonicalNixProfile
+			? `\n; Allow access to Nix profile\n(allow file-read* (subpath (param "NIX_PROFILE")))`
+			: '';
 
 		const dynamicPolicy = `
 ; Allow read-only file operations
@@ -351,6 +368,7 @@ class SeatbeltSandbox extends Sandbox {
 (allow network-outbound)
 (allow network-inbound)
 (allow system-socket)
+${nixProfileRules}
 `;
 
 		const fullPolicy = basePolicy + "\n" + dynamicPolicy;
@@ -365,6 +383,10 @@ class SeatbeltSandbox extends Sandbox {
 
 		if (canonicalTmpdir !== canonicalSlashTmp) {
 			args.push(`-DSLASH_TMP=${canonicalSlashTmp}`);
+		}
+
+		if (canonicalNixProfile) {
+			args.push(`-DNIX_PROFILE=${canonicalNixProfile}`);
 		}
 
 		args.push("--", "bash", "-c", script);
